@@ -1,0 +1,24 @@
+<odoo>
+  <data>
+    <record id="view_partner_form_inherit_button" model="ir.ui.view">
+            <field name="name">res.partner.form.inherit.button</field>
+            <field name="model">res.partner</field>
+            <field name="inherit_id" ref="base.view_partner_form"/>
+            <field name="arch" type="xml">
+                <!-- Añadir el botón dentro del header o en cualquier lugar del formulario -->
+                <xpath expr="//div[@name='vat_vies_container']" position="inside">
+                    <!-- Agregamos el botón dentro del div -->
+                    <button name="update_padron" string="Actualizar Padrón" type="object" class="btn-primary" />
+                </xpath>
+                <xpath expr="//notebook[@colspan='4']" position="inside">
+                    <page string="Ajustes">
+                        <group>
+                            <field name="padron_type" string="Tipo de busqueda (Padrón)"/>
+                            <field name="last_update_padron" string="Última actualización (Padrón)" readonly="1"/>
+                        </group>
+                    </page>
+                </xpath>
+            </field>
+      </record>
+  </data>
+</odoo>
