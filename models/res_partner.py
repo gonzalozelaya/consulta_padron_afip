@@ -4,36 +4,13 @@ from datetime import datetime, timedelta, date
 from odoo.exceptions import UserError
 import logging
 _logger = logging.getLogger(__name__)
-
-class AfipConnection(models.Model):
-    _inherit='l10n_ar.afipws.connection'
-
-    @api.model
-    def _l10n_ar_get_afip_ws_url(self, afip_ws, environment_type):
-        """ Function to be inherited on each module that adds a new webservice """
-        ws_data = {'wsfe': {'production': "https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL",
-                            'testing': "https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL"},
-                   'wsfex': {'production': "https://servicios1.afip.gov.ar/wsfexv1/service.asmx?WSDL",
-                             'testing': "https://wswhomo.afip.gov.ar/wsfexv1/service.asmx?WSDL"},
-                   'wsbfe': {'production': "https://servicios1.afip.gov.ar/wsbfev1/service.asmx?WSDL",
-                             'testing': "https://wswhomo.afip.gov.ar/wsbfev1/service.asmx?WSDL"},
-                   'wscdc': {'production': "https://servicios1.afip.gov.ar/WSCDC/service.asmx?WSDL",
-                             'testing': "https://wswhomo.afip.gov.ar/WSCDC/service.asmx?WSDL"},
-                  'ws_sr_constancia_inscripcion': {'production': "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5?WSDL",
-                             'testing': "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA5?WSDL"},
-                   'ws_sr_padron_a13': {'production': "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA13?WSDL",
-                             'testing': "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA13?WSDL"},
-                    'ws_sr_padron_a10': {'production': "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA10?WSDL",
-                             'testing': "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA10?WSDL"},
-                  }
-        return ws_data.get(afip_ws, {}).get(environment_type)
     
 class AfipPadron(models.Model):
     _inherit='res.partner'
 
     padron_type= fields.Selection(string='Tipo de padrón',
                                   selection=[('a13','Padron A13'),('constancia_inscripcion','Constancia de Inscripción')],
-                                  default='constancia_inscripcion')
+                                  default='a13')
     prov_dict = {
     0: "Ciudad Autónoma de Buenos Aires",
     1: "Buenos Aires",
@@ -73,7 +50,6 @@ class AfipPadron(models.Model):
                 ('ws_sr_padron_a10', _('Consulta de Padrón Alcance 10')),
                 ('ws_sr_padron_a13', _('Consulta de Padrón Alcance 13')),
                ]
-
     
     def update_padron(self):
             if self.padron_type == 'a13':
@@ -174,14 +150,15 @@ class AfipPadron(models.Model):
         :return: Datos de la constancia de inscripción en AFIP
         """
         self.ensure_one()
-    
         # Modo de prueba
         if self.env.registry.in_test_mode():
             return _("Test mode: no real AFIP connection")
     
         # Obtener la conexión al servicio web de AFIP
         afip_ws = type  # Asegúrate de usar el servicio correcto aquí
+        _logger.warning('Start connection')
         connection = self.afip_company_id._l10n_ar_get_connection(afip_ws)
+        _logger.warning('Get client')
         client, auth = connection._get_client()
         id_persona = str(self.l10n_ar_vat)
         data={

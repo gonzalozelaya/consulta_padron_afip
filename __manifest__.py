@@ -18,7 +18,7 @@
     'version': '1.0',
 
     # any module necessary for this one to work correctly
-    'depends': ['base','l10n_ar_edi'],
+    'depends': ['base','l10n_ar_edi','account'],
     # always loaded
     'data': [
         'views/res_partner_view.xml',
