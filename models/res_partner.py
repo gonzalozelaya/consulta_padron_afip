@@ -10,7 +10,9 @@ class AfipPadron(models.Model):
 
     padron_type= fields.Selection(string='Tipo de padrón',
                                   selection=[('a13','Padron A13'),('constancia_inscripcion','Constancia de Inscripción')],
-                                  default='a13')
+                                  default='constancia_inscripcion')
+    #integrante_soc_padron = fields.Selection(string='Tipo de persona',selection=[('FISICA','FISICA'),('JURIDICA','JURIDICA')])
+    
     prov_dict = {
     0: "Ciudad Autónoma de Buenos Aires",
     1: "Buenos Aires",
@@ -50,13 +52,15 @@ class AfipPadron(models.Model):
                 ('ws_sr_padron_a10', _('Consulta de Padrón Alcance 10')),
                 ('ws_sr_padron_a13', _('Consulta de Padrón Alcance 13')),
                ]
-    
+
     def update_padron(self):
+            if self.l10n_latam_identification_type_id.id != 4:
+                raise UserError('Se debe ingresar un CUIT válido para poder realizar la consulta')
             if self.padron_type == 'a13':
                 datas = self.connectToAfip('ws_sr_padron_a13')
                 persona = datas.persona
                 if not persona:
-                    raise UserError('No se puedo obetener los datos de la persona')
+                    raise UserError('No se puede obetener los datos de la persona')
                 domicilios = persona['domicilio'] if 'domicilio' in persona else []
                 #actividad_principal = self.env['afip.activity'].search([('code', '=', persona['idActividadPrincipal'])],limit=1)
                 if persona['razonSocial']:
@@ -70,8 +74,6 @@ class AfipPadron(models.Model):
                     'last_update_padron' : date.today(),
                     'start_date': self.crear_registro_con_fecha(persona['periodoActividadPrincipal']),
                 })
-                #if actividad_principal:
-                #   self.actividades_padron = [6,0,actividad_principal.id]
             
                 domicilio_fiscal = next((dom for dom in domicilios if dom['tipoDomicilio'] == 'FISCAL'), None)
                 if domicilio_fiscal:
@@ -118,9 +120,81 @@ class AfipPadron(models.Model):
                                     # Actualizar el registro de res.partner con los datos extraídos  
             else:
                 datas = self.connectToAfip('ws_sr_constancia_inscripcion')
+                if datas['errorConstancia']:
+                    raise UserError(f"Ocurrio un error al obtener la información: {datas['errorConstancia']['error']}")
                 persona = datas['datosGenerales']
+                monotributo = datas['datosMonotributo']
+                datosRegimenGeneral = datas['datosRegimenGeneral']
+                
+                # Lista para almacenar los códigos de actividad de ambos bloques
+
+                codigos_actividad = []
+                codigos_impuestos = []
+                fechas_actividades = []
+                if monotributo:
+                    actividades_monotributo = monotributo['actividad']
+                    impuestos_monotributo = monotributo['impuesto']
+                    actividad_monotributista = monotributo['actividadMonotributista']
+                    categoria_monotributo = monotributo['categoriaMonotributo']
+                    
+                    # Obtener la fecha mínima en actividad de monotributo
+                    fechas = [datetime.strptime(str(actividad["periodo"]), "%Y%m").date() for actividad in actividades_monotributo]
+                    fecha_menor_actividad = min(fechas) if fechas else None
+                
+                    # Agregar los códigos de actividad al array general
+                    codigos_actividad += [actividad['idActividad'] for actividad in actividades_monotributo]
+                    codigos_impuestos += [impuesto['idImpuesto'] for impuesto in impuestos_monotributo]
+                    # Asignaciones
+                    self.monotributo_padron = 'S'
+                    fechas_monotributo = [datetime.strptime(str(actividad["periodo"]), "%Y%m").date() for actividad in actividades_monotributo]
+                    fechas_actividades.extend(fechas_monotributo)  # Añadir a la lista general de fechas
+
+                    self.actividad_monotributo_padron = actividad_monotributista['descripcionActividad'] if actividad_monotributista['descripcionActividad'] else ''
+                else:
+                    self.monotributo_padron = 'N'
+                impuestos_general = []
+                if datosRegimenGeneral:
+                    actividades_general = datosRegimenGeneral['actividad']
+                    impuestos_general = datosRegimenGeneral['impuesto']
+                    # Obtener la fecha mínima en actividades del régimen general
+                    fechas_regimen_general = [datetime.strptime(str(actividad["periodo"]), "%Y%m").date() for actividad in actividades_general]
+                    fechas_actividades.extend(fechas_regimen_general)  # Añadir también estas fechas a la lista general
+                    
+                    # Agregar los códigos de actividad al array general
+                    codigos_actividad += [actividad['idActividad'] for actividad in actividades_general]
+                    codigos_impuestos += [impuesto['idImpuesto'] for impuesto in impuestos_general]
+                # Buscar los registros de actividad en el modelo de actividades Many2many usando los códigos combinados
+                actividad_records = self.env['afip.activity'].search([('code', 'in', codigos_actividad)])
+                impuestos_records = self.env['afip.tax'].search([('code', 'in', codigos_impuestos)])
+                # Asignar todas las actividades encontradas al campo Many2many
+                self.actividades_padron = [(6, 0, actividad_records.ids)]
+                self.impuestos_padron = [(6, 0, impuestos_records.ids)]
+                fecha_menor_actividad = min(fechas_actividades) if fechas_actividades else None
+                # Asignar la fecha mínima a `self.start_date`
+                self.start_date = fecha_menor_actividad
+
+                # Tipo de responsabilidad
+                if monotributo:
+                    # Es monotributo
+                    self.l10n_ar_afip_responsibility_type_id = self.env['l10n_ar.afip.responsibility.type'].browse(6).id
+                elif any(impuesto['idImpuesto'] == 30 for impuesto in impuestos_general):
+                    # Responsable Inscripto (Código 30)
+                    self.l10n_ar_afip_responsibility_type_id = self.env['l10n_ar.afip.responsibility.type'].browse(1).id
+                elif any(impuesto['idImpuesto'] == 32 for impuesto in impuestos_general):
+                    # Exento (Código 32)
+                    self.l10n_ar_afip_responsibility_type_id = self.env['l10n_ar.afip.responsibility.type'].browse(4).id
+                else:
+                    # Otro tipo de responsabilidad (agregar más condiciones si es necesario)
+                    self.l10n_ar_afip_responsibility_type_id = self.env['l10n_ar.afip.responsibility.type'].browse(1).id
+                #Ganancias sociedad
+                if any(impuesto['idImpuesto'] == 10 for impuesto in impuestos_general):
+                    self.imp_ganancias_padron = 'AC'
                 if not persona:
-                    raise UserError('No se puedo obetener los datos de la persona,la constancia puede estar bloqueada. Puede probar usar el padron A13 en la pestaña ajustes')
+                    raise UserError('No se puede obetener los datos de la persona,la constancia puede estar bloqueada. Puede probar usar el padron A13 en la pestaña ajustes')
+                if persona['estadoClave']:
+                    self.estado_padron = persona['estadoClave']
+                if persona['tipoPersona']:
+                    self.integrante_soc_padron = 'S' if persona['tipoPersona'] == 'JURIDICA' else 'N'
                 if persona['razonSocial']:
                     name = persona['razonSocial']
                 elif persona['apellido'] and persona['nombre']:
@@ -139,10 +213,8 @@ class AfipPadron(models.Model):
                         'zip': domicilio_fiscal['codPostal'],
                         'city': domicilio_fiscal['localidad'],
                         'state_id': state,
-    
-                        #'street2': 'Piso: ' + str(domicilio_fiscal.get('piso', '')) + ' Dpto: ' + str(domicilio_fiscal.get('oficinaDptoLocal', '')),
-                    })
-                          
+                        })
+                    
     def connectToAfip(self,type):
         """
         Consulta la constancia de inscripción del CUIT proporcionado vía AFIP web service
@@ -156,9 +228,7 @@ class AfipPadron(models.Model):
     
         # Obtener la conexión al servicio web de AFIP
         afip_ws = type  # Asegúrate de usar el servicio correcto aquí
-        _logger.warning('Start connection')
         connection = self.afip_company_id._l10n_ar_get_connection(afip_ws)
-        _logger.warning('Get client')
         client, auth = connection._get_client()
         id_persona = str(self.l10n_ar_vat)
         data={
