@@ -40,13 +40,6 @@ class AfipPadron(models.Model):
     23: "Tierra del Fuego",
 }
     
-    afip_company_id=fields.Many2one(
-        comodel_name='res.company',
-        string="Compania",
-         default=lambda self: self.env['res.company'].browse(1),
-        readonly=True,
-    )
-    
     def _get_l10n_ar_afip_ws(self):
         return [('ws_sr_constancia_inscripcion', _('Constancia de Inscripción')),
                 ('ws_sr_padron_a10', _('Consulta de Padrón Alcance 10')),
@@ -109,8 +102,6 @@ class AfipPadron(models.Model):
                                     'zip': domicilio['codigoPostal'],
                                     'city': domicilio['localidad'],
                                     'state_id': state,
-                                    #'phone': self.phone,  # Opcional
-                                    #'email': self.email,  # Opcional
                                 }
                                 # Crear el nuevo contacto hijo
                                 self.env['res.partner'].create(vals)
@@ -228,13 +219,13 @@ class AfipPadron(models.Model):
     
         # Obtener la conexión al servicio web de AFIP
         afip_ws = type  # Asegúrate de usar el servicio correcto aquí
-        connection = self.afip_company_id._l10n_ar_get_connection(afip_ws)
+        connection = self.env.company._l10n_ar_get_connection(afip_ws)
         client, auth = connection._get_client()
         id_persona = str(self.l10n_ar_vat)
         data={
             'token': auth.get('Token'),  # token ya debe estar en `auth`
             'sign': auth.get('Sign'),    # sign ya debe estar en `auth`
-            'cuitRepresentada': (self.afip_company_id.vat),  # Asegúrate de usar el CUIT correcto de la empresa representada
+            'cuitRepresentada': (self.env.company.vat),  # Asegúrate de usar el CUIT correcto de la empresa representada
             'idPersona': id_persona  # CUIT de la persona a consultar (asegúrate de que `self.vat` sea un CUIT válido)
         }
 
