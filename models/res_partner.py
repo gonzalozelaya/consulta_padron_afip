@@ -200,9 +200,9 @@ class AfipPadron(models.Model):
                     domicilio_fiscal = persona['domicilioFiscal']
                     state =  self.env['res.country.state'].search([('name', '=', self.prov_dict[domicilio_fiscal['idProvincia']]),('country_id', '=', 10)], limit=1).id,
                     self.write({
-                        'street': domicilio_fiscal['direccion'],
-                        'zip': domicilio_fiscal['codPostal'],
-                        'city': domicilio_fiscal['localidad'],
+                        'street': domicilio_fiscal['direccion'] if domicilio_fiscal['direccion'] else '',
+                        'zip': domicilio_fiscal['codPostal'] if domicilio_fiscal['codPostal'] else '',
+                        'city': domicilio_fiscal['localidad'] if domicilio_fiscal['localidad'] else '',
                         'state_id': state,
                         })
                     
